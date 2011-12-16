@@ -48,6 +48,7 @@ import errno
 import httplib
 import os
 import Queue
+import random
 import re
 import socket
 import sys
@@ -241,7 +242,9 @@ class ConnectionPool(object):
     def get_http_connection(self, host, is_secure):
         """
         Gets a connection from the pool for the named host.  Returns
-        None if there is no connection that can be reused.
+        None if there is no connection that can be reused. It's the caller's
+        responsibility to call close() on the connection when it's no longer
+        needed.
         """
         self.clean()
         with self.mutex:
@@ -400,7 +403,7 @@ class AWSAuthConnection(object):
         :type port: int
         :param port: The port to use to connect
         """
-        self.num_retries = 5
+        self.num_retries = 6
         # Override passed-in is_secure setting if value was defined in config.
         if config.has_option('Boto', 'is_secure'):
             is_secure = config.getboolean('Boto', 'is_secure')
@@ -706,6 +709,8 @@ class AWSAuthConnection(object):
         i = 0
         connection = self.get_http_connection(request.host, self.is_secure)
         while i <= num_retries:
+            # Use binary exponential backoff to desynchronize client requests
+            next_sleep = random.random() * (2 ** i)
             try:
                 # we now re-sign each request before it is retried
                 request.authorize(connection=self)
@@ -723,7 +728,8 @@ class AWSAuthConnection(object):
                 if request.method == 'HEAD' and getattr(response, 'chunked', False):
                     response.chunked = 0
                 if response.status == 500 or response.status == 503:
-                    boto.log.debug('received %d response, retrying in %d seconds' % (response.status, 2 ** i))
+                    boto.log.debug('received %d response, retrying in %3.1f seconds' %
+                                   (response.status, next_sleep))
                     body = response.read()
                 elif response.status < 300 or response.status >= 400 or \
                         not location:
@@ -747,7 +753,7 @@ class AWSAuthConnection(object):
                 boto.log.debug('encountered %s exception, reconnecting' % \
                                   e.__class__.__name__)
                 connection = self.new_http_connection(request.host, self.is_secure)
-            time.sleep(2 ** i)
+            time.sleep(next_sleep)
             i += 1
         # If we made it here, it's because we have exhausted our retries and stil haven't
         # succeeded.  So, if we have a response object, use it to raise an exception.
@@ -796,7 +802,7 @@ class AWSAuthConnection(object):
         and making a new request will open a connection again."""
 
         boto.log.debug('closing all HTTP connections')
-        self.connection = None  # compat field
+        self._connection = None  # compat field
 
 class AWSQueryConnection(AWSAuthConnection):
 

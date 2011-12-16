@@ -24,6 +24,7 @@ from boto.sqs.regioninfo import SQSRegionInfo
 from boto.sqs.queue import Queue
 from boto.sqs.message import Message
 from boto.sqs.attributes import Attributes
+from boto.sqs.batchresults import BatchResults
 from boto.exception import SQSError
 
 
@@ -33,10 +34,10 @@ class SQSConnection(AWSQueryConnection):
     """
     DefaultRegionName = 'us-east-1'
     DefaultRegionEndpoint = 'queue.amazonaws.com'
-    APIVersion = '2009-02-01'
+    APIVersion = '2011-10-01'
     DefaultContentType = 'text/plain'
     ResponseError = SQSError
-    
+
     def __init__(self, aws_access_key_id=None, aws_secret_access_key=None,
                  is_secure=True, port=None, proxy=None, proxy_port=None,
                  proxy_user=None, proxy_pass=None, debug=0,
@@ -85,7 +86,8 @@ class SQSConnection(AWSQueryConnection):
         """
         params = {'QueueName': queue_name}
         if visibility_timeout:
-            params['DefaultVisibilityTimeout'] = '%d' % (visibility_timeout,)
+            params['Attribute.1.Name'] = 'VisibilityTimeout'
+            params['Attribute.1.Value'] = int(visibility_timeout)
         return self.get_object('CreateQueue', params, Queue)
 
     def delete_queue(self, queue, force_deletion=False):
@@ -210,9 +212,39 @@ class SQSConnection(AWSQueryConnection):
         params = {'ReceiptHandle' : receipt_handle}
         return self.get_status('DeleteMessage', params, queue.id)
 
-    def send_message(self, queue, message_content):
+    def send_message(self, queue, message_content, delay_seconds=None):
         params = {'MessageBody' : message_content}
+        if delay_seconds:
+            params['DelaySeconds'] = int(delay_seconds)
         return self.get_object('SendMessage', params, Message,
+                               queue.id, verb='POST')
+
+    def send_message_batch(self, queue, messages):
+        """
+        Delivers up to 10 messages to a queue in a single request.
+
+        :type queue: A :class:`boto.sqs.queue.Queue` object.
+        :param queue: The Queue to which the messages will be written.
+
+        :type messages: List of lists.
+        :param messages: A list of lists or tuples.  Each inner
+            tuple represents a single message to be written
+            and consists of and ID (string) that must be unique
+            within the list of messages, the message body itself
+            which can be a maximum of 64K in length, and an
+            integer which represents the delay time (in seconds)
+            for the message (0-900) before the message will
+            be delivered to the queue.
+        """
+        params = {}
+        for i, msg in enumerate(messages):
+            p_name = 'SendMessageBatchRequestEntry.%i.Id' % (i+1)
+            params[p_name] = msg[0]
+            p_name = 'SendMessageBatchRequestEntry.%i.MessageBody' % (i+1)
+            params[p_name] = msg[1]
+            p_name = 'SendMessageBatchRequestEntry.%i.DelaySeconds' % (i+1)
+            params[p_name] = msg[2]
+        return self.get_object('SendMessageBatch', params, BatchResults,
                                queue.id, verb='POST')
 
     def change_message_visibility(self, queue, receipt_handle,
@@ -241,7 +273,7 @@ class SQSConnection(AWSQueryConnection):
         if prefix:
             params['QueueNamePrefix'] = prefix
         return self.get_list('ListQueues', params, [('QueueUrl', Queue)])
-        
+
     def get_queue(self, queue_name):
         rs = self.get_all_queues(queue_name)
         for q in rs:
@@ -305,7 +337,7 @@ class SQSConnection(AWSQueryConnection):
         params = {'Label': label}
         return self.get_status('RemovePermission', params, queue.id)
 
-    
-    
 
-    
+
+
+

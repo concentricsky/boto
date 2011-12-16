@@ -43,6 +43,10 @@ def regions():
                           endpoint='rds.eu-west-1.amazonaws.com'),
             RDSRegionInfo(name='us-west-1',
                           endpoint='rds.us-west-1.amazonaws.com'),
+            RDSRegionInfo(name='us-west-2',
+                          endpoint='rds.us-west-2.amazonaws.com'),
+            RDSRegionInfo(name='sa-east-1',
+                          endpoint='rds.sa-east-1.amazonaws.com'),
             RDSRegionInfo(name='ap-northeast-1',
                           endpoint='rds.ap-northeast-1.amazonaws.com'),
             RDSRegionInfo(name='ap-southeast-1',
@@ -556,7 +560,7 @@ class RDSConnection(AWSQueryConnection):
         :param name: The name of the new dbparameter group
 
         :type engine: str
-        :param engine: Name of database engine.  Must be MySQL5.1 for now.
+        :param engine: Name of database engine.
 
         :type description: string
         :param description: The description of the new security group
@@ -565,7 +569,7 @@ class RDSConnection(AWSQueryConnection):
         :return: The newly created DBSecurityGroup
         """
         params = {'DBParameterGroupName': name,
-                  'Engine': engine,
+                  'DBParameterGroupFamily': engine,
                   'Description' : description}
         return self.get_object('CreateDBParameterGroup', params, ParameterGroup)
 
